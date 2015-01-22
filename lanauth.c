@@ -34,7 +34,8 @@ int ver = 1;			/* protocol version */
 char level = 2;			/* access level */
 int sock = -1;			/* socket */
 int first;			/* first try */
-unsigned char localip[16], gateip[16], pass[21], challenge[256], digest[256];
+char localip[16], gateip[16], pass[21], challenge[256];
+unsigned char digest[256];
 
 void opensock();		/* connect to server */
 void auth1();			/* generate response for v1 protocol */
@@ -61,7 +62,7 @@ va_list ap;
 int main(int argc, char **argv)
 {
 char		*s;
-int		op;
+int		op, rc;
 unsigned char	ch;
 	strcpy(gateip, "10.0.0.1");
 	/* process command line arguments */
@@ -98,10 +99,16 @@ unsigned char	ch;
 		level = atoi(optarg);
 		break;
 	case 'u':
-		setuid(atoi(optarg));
+		rc = setuid(atoi(optarg));
+		if (rc != 0) {
+			syslog(LOG_WARNING, "cannot sed uid=%d, errno=%d", rc, errno);
+		}
 		break;
 	case 'g':
-		setgid(atoi(optarg));
+		rc = setgid(atoi(optarg));
+		if (rc != 0) {
+			syslog(LOG_WARNING, "cannot sed gid=%d, errno=%d", rc, errno);
+		}
 		break;
 	default:
 		usage();
@@ -116,7 +123,10 @@ unsigned char	ch;
 	if(!nodaemon) {
 		signal(SIGPIPE, SIG_IGN);
 		signal(SIGHUP, SIG_IGN);
-		daemon(0, 0);
+		rc = daemon(0, 0);
+		if (rc < 0) {
+			syslog(LOG_WARNING, "failed to daemonize, errno=%d", errno);
+		}
 	}
 
 	/* main loop */
@@ -135,10 +145,16 @@ unsigned char	ch;
 		case 1: /* continue authorization */
 			break;
 		case 2: /* redirect to real server */
-			read(sock, (char*)&ch, 1);
+			rc = read(sock, (char*)&ch, 1);
+			if (rc < 0) {
+				syslog(LOG_WARNING, "failed to read gateway address length from socket, errno=%d", errno);
+			}
 			if(ch < 7 || ch > 15)
 			fatal("redirect: invalid gateway lenght %d", ch);
-			read(sock, gateip, ch);
+			rc = read(sock, gateip, ch);
+			if (rc < 0) {
+				syslog(LOG_WARNING, "failed to read gateway address from socket, errno=%d", errno);
+			}
 			gateip[ch] = 0;
 			syslog(LOG_NOTICE, "gate changed to %s", gateip);
 			close(sock);
@@ -157,7 +173,10 @@ next:
 			case 1: auth1(); break;
 			case 2: auth2(); break;
 		}
-		write(sock, digest, (ver == 1) ? 16 : 256);
+		rc = write(sock, digest, (ver == 1) ? 16 : 256);
+		if (rc < 0) {
+			syslog(LOG_WARNING, "failed to write digest into socket, errno=%d", errno);
+		}
 		tryread((char*)&ch, 1, 10);
 		if(first) {
 			first = 0;
@@ -184,7 +203,7 @@ void sigusr(int sig)
 void opensock()
 {
 struct sockaddr_in sin;
-int	len;
+unsigned int	len;
 again:
 	/* create socket */
 	if((sock = socket(PF_INET, SOCK_STREAM, 0)) == -1)fatal("socket: %m");
