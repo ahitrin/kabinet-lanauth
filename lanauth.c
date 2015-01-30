@@ -30,7 +30,6 @@
 int nodaemon = 0;		/* don't become daemon */
 int nobind = 1;			/* don't really bind, just assume we binded */
 int nolip = 0;			/* don't touch localip */
-int ver = 1;			/* protocol version */
 char level = 2;			/* access level */
 int sock = -1;			/* socket */
 int first;			/* first try */
@@ -38,7 +37,6 @@ char localip[16], gateip[16], pass[21], challenge[256];
 unsigned char digest[256];
 
 void opensock();		/* connect to server */
-void auth1();			/* generate response for v1 protocol */
 void auth2();			/* generate response for v2 protocol */
 void sigusr(int sig);		/* change access level */
 int tmread(char *buf, int size, int timeout);	/* read with timeout */
@@ -46,7 +44,7 @@ int tmread(char *buf, int size, int timeout);	/* read with timeout */
 				{ close(sock); if(first)sleep(5); continue; }
 void usage()
 {
-	printf("Usage: lanauth [-i] [-v 1|2] [-b localip] [-n] [-g gid] [-u uid] [-s gateip] [-l accesslevel] -p password\n");
+	printf("Usage: lanauth [-i] [-b localip] [-n] [-g gid] [-u uid] [-s gateip] [-l accesslevel] -p password\n");
 	exit(0);
 }
 
@@ -70,10 +68,6 @@ unsigned char	ch;
 	switch(op) {
 	case 'i':
 		nodaemon = 1;
-		break;
-	case 'v':
-		ver = atoi(optarg);
-		if(ver != 1 && ver != 2)usage();
 		break;
 	case 'b':
 		strncpy(localip, optarg, sizeof(localip)-1);
@@ -169,11 +163,8 @@ unsigned char	ch;
 		/* main loop of challenge-response authorization */
 next:
 		tryread(challenge, sizeof(challenge), 240);
-		switch(ver) {
-			case 1: auth1(); break;
-			case 2: auth2(); break;
-		}
-		rc = write(sock, digest, (ver == 1) ? 16 : 256);
+		auth2();
+		rc = write(sock, digest, 256);
 		if (rc < 0) {
 			syslog(LOG_WARNING, "failed to write digest into socket, errno=%d", errno);
 		}
@@ -224,7 +215,7 @@ again:
 	bzero(&sin, sizeof(sin));
 	sin.sin_family = AF_INET;
 	sin.sin_addr.s_addr = inet_addr(gateip);
-	sin.sin_port = htons((ver == 1) ? 8899 : 8314);
+	sin.sin_port = htons(8314);
 	if(sin.sin_addr.s_addr == INADDR_NONE)
 		fatal("%s: invalid ip address", gateip);
 
@@ -279,19 +270,6 @@ struct timeval tv;
 		return 0;
 	}
 	return n;
-}
-
-void auth1()
-{
-MD5_CTX	ctx;
-	MD5_Init(&ctx);
-	MD5_Update(&ctx, challenge+1, challenge[0]);
-	MD5_Update(&ctx, localip, strlen(localip));
-	level += '0';
-	MD5_Update(&ctx, &level, 1);
-	level -= '0';
-	MD5_Update(&ctx, pass, strlen(pass));
-	MD5_Final(digest, &ctx);
 }
 
 void auth2()
