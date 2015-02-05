@@ -33,13 +33,13 @@ int nolip = 0;			/* don't touch localip */
 char level = 2;			/* access level */
 int sock = -1;			/* socket */
 int first;			/* first try */
-char localip[16], gateip[16], pass[21], challenge[256];
-unsigned char digest[256];
+char localip[16], gateip[16], pass[21];
+unsigned char digest[256], challenge[256];
 
 void opensock();		/* connect to server */
 void auth2();			/* generate response for v2 protocol */
 void sigusr(int sig);		/* change access level */
-int tmread(char *buf, int size, int timeout);	/* read with timeout */
+int tmread(unsigned char *buf, int size, int timeout);	/* read with timeout */
 #define tryread(buf,size,tm)	if(!tmread(buf,size,tm))\
 				{ close(sock); if(first)sleep(5); continue; }
 void usage()
@@ -130,7 +130,7 @@ unsigned char	ch;
 		ch = 0;
 		first = 1;
 		/* start conversation */
-		tryread((char*)&ch, 1, 10);
+		tryread(&ch, 1, 10);
 		switch(ch) {
 		case 0:	/* access closed */
 			syslog(LOG_NOTICE, "access closed for us");
@@ -168,7 +168,7 @@ next:
 		if (rc < 0) {
 			syslog(LOG_WARNING, "failed to write digest into socket, errno=%d", errno);
 		}
-		tryread((char*)&ch, 1, 10);
+		tryread(&ch, 1, 10);
 		if(first) {
 			first = 0;
 			syslog(LOG_NOTICE, "auth succeful, access level = %d", ch);
@@ -233,7 +233,7 @@ again:
 //	syslog(LOG_DEBUG, "connected, local ip is %s", localip);
 }
 
-int tmread(char *buf, int size, int timeout)
+int tmread(unsigned char *buf, int size, int timeout)
 {
 fd_set	fds;
 int	n;
